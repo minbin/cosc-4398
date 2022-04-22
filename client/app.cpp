@@ -1,4 +1,7 @@
 #include "app.h"
+#include "key.h"
+#include "load.h"
+#include "util.h"
 
 #include <filesystem>
 #include <fstream>
@@ -7,174 +10,152 @@
 using namespace seal;
 namespace fs = std::filesystem;
 
-std::string get_uuid() {
-    static std::random_device dev;
-    static std::mt19937 rng(dev());
+void
+decrypt(std::string key_fp, std::string in_fp, std::string out_fp) {
+    EncryptionParameters parms(scheme_type::ckks);
 
-    std::uniform_int_distribution<int> dist(0, 15);
+    size_t poly_modulus_degree = 32768;
+    parms.set_poly_modulus_degree(poly_modulus_degree);
+    parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+    SEALContext context(parms);
+    print_parameters(parms);
 
-    const char *v = "0123456789abcdef";
-    const bool dash[] = { 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0 };
+    std::ifstream is;
 
-    std::string res;
-    for (int i = 0; i < 16; i++) {
-        if (dash[i]) res += "-";
-        res += v[dist(rng)];
-        res += v[dist(rng)];
+    std::cout << "Loading secret key from " << fs::path(key_fp) / "sk" << std::endl;
+    is.open(fs::path(key_fp) / "sk", std::ifstream::binary);
+    SecretKey secret_key;
+    secret_key.unsafe_load(context, is);
+    is.close();
+
+    std::cout << "Loading encrypted result from " << in_fp << std::endl;
+    Ciphertext ct_result;
+    Plaintext pt_result;
+    std::vector<double> result;
+    Decryptor decryptor(context, secret_key);
+    CKKSEncoder encoder(context);
+    std::vector<double> ans;
+
+    for (const auto &entry : fs::directory_iterator(in_fp)) {
+        ct_result = load_ct(entry.path(), context);
+        decryptor.decrypt(ct_result, pt_result);
+        encoder.decode(pt_result, result);
+        if (result.front() > 0) ans.push_back(1);
+        else ans.push_back(0);
     }
-    return res;
+
+    print_json(out_fp, ans);
 }
 
-void decrypt(std::string filepath, std::string filename) {
-  EncryptionParameters parms(scheme_type::ckks);
+void
+encrypt_infile(std::string key_fp, std::string in_fp, std::string out_fp) {
+    std::cout << "Creating output directory " << out_fp << std::endl;
+    fs::create_directories(fs::path(out_fp));
 
-  size_t poly_modulus_degree = 8192;
-  parms.set_poly_modulus_degree(poly_modulus_degree);
-  parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
-  SEALContext context(parms);
+    EncryptionParameters parms(scheme_type::ckks);
+    size_t poly_modulus_degree = 32768;
+    parms.set_poly_modulus_degree(poly_modulus_degree);
+    parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+    double scale = pow(2.0, 40);
+    SEALContext context(parms);
 
-  std::ifstream is;
+    keys_t keys = load_keys(fs::path(key_fp), context);
+    std::vector<std::vector<double>> queries = load_queries(in_fp);
+    std::cout << "Finished loading " << in_fp << std::endl;
 
-  is.open(fs::path(filepath) / "secret.key", std::ifstream::binary);
-  SecretKey secret_key;
-  secret_key.unsafe_load(context, is);
-  is.close();
+    Encryptor encryptor(context, keys.pk);
+    Evaluator evaluator(context);
+    CKKSEncoder encoder(context);
 
-  is.open(fs::path(filepath) / filename, std::ifstream::binary);
-  Ciphertext enc_res;
-  enc_res.unsafe_load(context, is);
-  is.close();
-
-  Decryptor decryptor(context, secret_key);
-  CKKSEncoder encoder(context);
-
-  Plaintext plain_res;
-  decryptor.decrypt(enc_res, plain_res);
-  std::vector<double> res;
-  encoder.decode(plain_res, res);
-  std::cout << res[0] << std::endl;
-}
-
-void encrypt(std::string filepath, std::string num) {
-  EncryptionParameters parms(scheme_type::ckks);
-
-  size_t poly_modulus_degree = 8192;
-  parms.set_poly_modulus_degree(poly_modulus_degree);
-  parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
-  double scale = pow(2.0, 40);
-  SEALContext context(parms);
-
-  PublicKey public_key;
-  RelinKeys relin_keys;
-  GaloisKeys gal_keys;
-  std::ifstream is;
-
-  is.open(fs::path(filepath) / "pub.key", std::ifstream::binary);
-  public_key.unsafe_load(context, is);
-  is.close();
-
-  is.open(fs::path(filepath) / "relin.key", std::ifstream::binary);
-  relin_keys.unsafe_load(context, is);
-  is.close();
-
-  is.open(fs::path(filepath) / "gal.key", std::ifstream::binary);
-  gal_keys.unsafe_load(context, is);
-  is.close();
-
-  Encryptor encryptor(context, public_key);
-  Evaluator evaluator(context);
-  CKKSEncoder encoder(context);
-  std::vector<double> input;
-  input.push_back(std::stoi(num));
-
-  Plaintext x_plain;
-  encoder.encode(input, scale, x_plain);
-  Ciphertext x_cipher;
-  encryptor.encrypt(x_plain, x_cipher);
-
-  std::string uuid;
-  uuid = get_uuid();
-
-  std::filebuf fb;
-  std::ostream os(&fb);
-  fb.open(fs::path(filepath) / uuid, std::ios::out);
-  x_cipher.save(os);
-  fb.close();
-
-  std::ofstream of;
-  of.open(fs::path(filepath) / "enc.conf", std::ios::app);
-  of << uuid << std::endl;
-  of.close();
-}
-
-void genkey() {
-  std::string uuid;
-  uuid = get_uuid();
-  std::cout << uuid << std::endl;
-
-  fs::create_directory(uuid);
-
-  EncryptionParameters parms(scheme_type::ckks);
-  size_t poly_modulus_degree = 8192;
-  parms.set_poly_modulus_degree(poly_modulus_degree);
-  parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
-  SEALContext context(parms);
-
-  print_parameters(uuid, context);
-
-  KeyGenerator keygen(context);
-  auto secret_key = keygen.secret_key();
-  PublicKey public_key;
-  RelinKeys relin_keys;
-  GaloisKeys gal_keys;
-  keygen.create_public_key(public_key);
-  keygen.create_relin_keys(relin_keys);
-  keygen.create_galois_keys(gal_keys);
-
-  std::filebuf fb;
-  std::ostream os(&fb);
-
-  fb.open(fs::path(uuid) / "secret.key", std::ios::out);
-  secret_key.save(os);
-  fb.close();
-  fb.open(fs::path(uuid) / "pub.key", std::ios::out);
-  public_key.save(os);
-  fb.close();
-  fb.open(fs::path(uuid) / "relin.key", std::ios::out);
-  relin_keys.save(os);
-  fb.close();
-  fb.open(fs::path(uuid) / "gal.key", std::ios::out);
-  gal_keys.save(os);
-  fb.close();
-}
-
-int main(int argc, char *argv[]) {
-  if (std::strcmp(argv[1], "encrypt") == 0) {
-    if (argc == 4) {
-      encrypt(argv[2], argv[3]);
+    fs::create_directories(fs::path(out_fp) / "query");
+    fs::create_directories(fs::path(out_fp) / "keys");
+    for (int i=0; i < queries.size(); i++) {
+        Plaintext pt_query;
+        std::cout << "Encrypting "; print_vector(queries[i]);
+        encoder.encode(queries[i], scale, pt_query);
+        Ciphertext ct_query;
+        encryptor.encrypt(pt_query, ct_query);
+        std::string out_fn = fs::path(out_fp) / "query" / std::to_string(i);
+        std::cout << "Saving output file " << out_fn << std::endl;
+        std::filebuf fb;
+        std::ostream os(&fb);
+        fb.open(fs::path(out_fn), std::ios::out);
+        ct_query.save(os);
+        fb.close();
     }
-  } else if (std::strcmp(argv[1], "genkey") == 0) {
-    genkey();
-  } else if (std::strcmp(argv[1], "decrypt") == 0) {
-    std::string line;
-    std::ifstream ifs (fs::path(argv[2]) / "enc.conf");
-    if (ifs.is_open()) {
-      while(std::getline(ifs, line)) {
-        decrypt(argv[2], line + ".res");
-      }
-    }
-  }
-  else if (std::strcmp(argv[1], "pack") == 0) {
-    std::string sk = fs::path(argv[2]) / "secret.key";
-    std::string cmd = "tar -cvzf " + std::string(argv[2]) + ".tar.gz --exclude-from=" + sk + " " + std::string(argv[2]);
-    std::cout << cmd << std::endl;
-    system(cmd.c_str());
-  }
-  else if (std::strcmp(argv[1], "unpack") == 0) {
-    std::string cmd = "tar -zxf " + std::string(argv[2]);
-    std::cout << cmd << std::endl;
-    system(cmd.c_str());
-  }
 
-  return 0;
+    save_keys(fs::path(out_fp) / "keys", keys);
+}
+
+void
+genkey(std::string base_fp) {
+    EncryptionParameters parms(scheme_type::ckks);
+    size_t poly_modulus_degree = 32768;
+    parms.set_poly_modulus_degree(poly_modulus_degree);
+    parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
+    SEALContext context(parms);
+
+    // Generate keys
+    KeyGenerator keygen(context);
+    auto secret_key = keygen.secret_key();
+    keys_t keys;
+    keygen.create_public_key(keys.pk);
+    keygen.create_relin_keys(keys.rk);
+    keygen.create_galois_keys(keys.gk);
+
+    // Save keys
+    const fs::path out_fp = fs::path(base_fp);
+    save_keys(out_fp, keys);
+    std::filebuf fb;
+    std::ostream os(&fb);
+    fb.open(out_fp / "sk", std::ios::out);
+    secret_key.save(os);
+    fb.close();
+}
+
+int
+main(int argc, char *argv[]) {
+    if (argc == 1) {
+        std::cout << "[genkey][encrypt][decrypt]" << std::endl;
+        return 0;
+    }
+    std::vector<std::string> args(argv, argv + argc);
+    args.erase(args.begin());
+
+    if (args.front() == "genkey") {
+        if (argc == 2) std::cout << "[-p path]" << std::endl;
+        if (argc == 4) {
+            genkey(args[2]);
+        }
+    } else if (args.front() == "encrypt") {
+        if (argc == 2) {
+            std::cout << "[-kf key_filepath][-if in_filename][-of out_filepath]" << std::endl;
+        } else {
+            std::string key_fp = "";
+            std::string in_fp = "";
+            std::string out_fp = "";
+            for (int i=1; i < args.size(); i=i+2) {
+                if (args[i] == "-kf") key_fp = args[i+1];
+                else if (args[i] == "-if") in_fp = args[i+1];
+                else if (args[i] == "-of") out_fp = args[i+1];
+            }
+            encrypt_infile(key_fp, in_fp, out_fp);
+        }
+    } else if (args.front() == "decrypt") {
+        if (argc == 2) {
+            std::cout << "[-kf key_filepath][-if in_filename][-of out_filepath]" << std::endl;
+        } else {
+            std::string key_fp = "";
+            std::string in_fp = "";
+            std::string out_fp = "";
+            for (int i=1; i < args.size(); i=i+2) {
+                if (args[i] == "-kf") key_fp = args[i+1];
+                else if (args[i] == "-if") in_fp = args[i+1];
+                else if (args[i] == "-of") out_fp = args[i+1];
+            }
+            decrypt(key_fp, in_fp, out_fp);
+        }
+    }
+
+    return 0;
 }

@@ -4,9 +4,7 @@
 #include <iomanip>
 #include <iostream>
 
-inline void print_parameters(std::string uuid, const seal::SEALContext &context) {
-  std::cout << "| Creating " << uuid << std::endl;
-
+inline void print_parameters(const seal::SEALContext &context) {
   auto &context_data = *context.key_context_data();
   std::string scheme_name;
   switch (context_data.parms().scheme()) {
@@ -20,11 +18,11 @@ inline void print_parameters(std::string uuid, const seal::SEALContext &context)
       throw std::invalid_argument("unsupported scheme");
   }
 
-  std::cout << "| Encryption parameters :" << std::endl;
-  std::cout << "|   scheme: " << scheme_name << std::endl;
-  std::cout << "|   poly_modulus_degree: " << context_data.parms().poly_modulus_degree() << std::endl;
+  std::cout << "Encryption parameters :" << std::endl;
+  std::cout << "   scheme: " << scheme_name << std::endl;
+  std::cout << "   poly_modulus_degree: " << context_data.parms().poly_modulus_degree() << std::endl;
 
-  std::cout << "|   coeff_modulus size: ";
+  std::cout << "   coeff_modulus size: ";
   std::cout << context_data.total_coeff_modulus_bit_count() << " (";
   auto coeff_modulus = context_data.parms().coeff_modulus();
   std::size_t coeff_modulus_size = coeff_modulus.size();
@@ -49,17 +47,15 @@ inline void print_vector(std::vector<T> vec, std::size_t print_size = 4, int pre
     for (std::size_t i = 0; i < slot_count; i++) {
       std::cout << " " << vec[i] << ((i != slot_count - 1) ? "," : " ]\n");
     }
-  } else {
+  }
+  else {
     vec.resize(std::max(vec.size(), 2 * print_size));
     std::cout << "    [";
     for (std::size_t i = 0; i < print_size; i++) {
       std::cout << " " << vec[i] << ",";
     }
     if (vec.size() > 2 * print_size) {
-      std::cout << " ...,";
-    }
-    for (std::size_t i = slot_count - print_size; i < slot_count; i++) {
-      std::cout << " " << vec[i] << ((i != slot_count - 1) ? "," : " ]\n");
+      std::cout << " ... ]";
     }
   }
   std::cout << std::endl;
