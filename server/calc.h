@@ -5,10 +5,16 @@
 
 using namespace seal;
 
-Ciphertext dot_product(keys_t keys, const seal::SEALContext context, Plaintext pt_model, Ciphertext ct_query) {
+inline Ciphertext
+decision_function(keys_t keys, const SEALContext context, Ciphertext ct_query, std::vector<double> model) {
+    CKKSEncoder encoder(context);
     Evaluator evaluator(context);
     Ciphertext ct_result;
     Ciphertext ct_tmp;
+
+    // Model to plaintext
+    Plaintext pt_model;
+    encoder.encode(model, ct_query.scale(), pt_model);
 
     // Multiply query * coef
     evaluator.multiply_plain(ct_query, pt_model, ct_result);
@@ -16,7 +22,6 @@ Ciphertext dot_product(keys_t keys, const seal::SEALContext context, Plaintext p
 
     // Sum result of query * coef
     for (int i=0; i < 14; i++) {
-        std::cout << "   Rotate " << pow(2, i) << std::endl;
         evaluator.rotate_vector(ct_result, pow(2, i), keys.gk, ct_tmp);
         evaluator.add_inplace(ct_result, ct_tmp);
         evaluator.relinearize_inplace(ct_result, keys.rk);
@@ -25,14 +30,14 @@ Ciphertext dot_product(keys_t keys, const seal::SEALContext context, Plaintext p
     return ct_result;
 }
 
-Ciphertext mult_random_float(keys_t keys, const seal::SEALContext context, Ciphertext ct_result, double scale) {
+inline Ciphertext
+mult_random_float(keys_t keys, const SEALContext context, Ciphertext ct, double scale) {
     CKKSEncoder encoder(context);
     Evaluator evaluator(context);
 
-    Plaintext pt_random_float;
-    encoder.encode(random_float(), scale, pt_random_float);
-    evaluator.multiply_plain_inplace(ct_result, pt_random_float);
-
-    return ct_result;
+    Plaintext pt;
+    encoder.encode(random_float(), scale, pt);
+    evaluator.multiply_plain_inplace(ct, pt);
+    evaluator.relinearize_inplace(ct, keys.rk);
+    return ct;
 }
-
