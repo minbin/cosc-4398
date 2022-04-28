@@ -30,30 +30,36 @@ load_keys(std::string key_fp, const seal::SEALContext context) {
     return keys;
 }
 
-Plaintext
-load_pt_singleclass_model(std::string model_fp, const seal::SEALContext context, double scale) {
-    std::vector<double> model;
+std::vector<double>
+load_pt_singleclass_model(std::string model_fp) {
     std::ifstream is;
     std::string s;
     std::string delim = ",";
 
     is.open(model_fp);
-    std::cout << "Loading model from " << model_fp << std::endl;
     size_t pos = 0;
+
+    std::cout << "Loading model" << std::endl;
+    std::vector<double> model;
+    double intercept;
     while (is) {
         is >> s;
         while ((pos = s.find(delim)) != std::string::npos) {
             model.push_back(std::stof(s.substr(0, pos)));
             s.erase(0, pos + delim.length());
         }
+        model.push_back(std::stof(s));
     }
     is.close();
 
-    CKKSEncoder encoder(context);
-    Plaintext pt_model;
-    encoder.encode(model, scale, pt_model);
+    std::cout << "    Coefficients: ";
+    for(int i=0; i < model.size()-1; i++) {
+        std::cout << model[i] << " ";
+    }
+    std::cout << "\n";
+    std::cout << "    Intercept: " << model.back() << std::endl;
 
-    return pt_model;
+    return model;
 }
 
 std::vector<Plaintext>
