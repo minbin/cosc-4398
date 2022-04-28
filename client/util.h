@@ -20,14 +20,19 @@ get_uuid() {
 }
 
 inline void
-print_json(std::string out_fp, std::vector<double> ans) {
+print_json(std::string out_fp, std::vector<double> ans, std::vector<double> proba) {
     std::cout << "Writing to " << fs::path(out_fp) / "result.json" << std::endl;
     fs::create_directories(fs::path(out_fp));
     std::ofstream out(fs::path(out_fp) / "result.json");
+    out << std::fixed << std::setprecision(8);
     if (out.is_open()) {
         out << "{\n  \"res\": [";
         for (int i=0; i < ans.size(); i++) {
-          out << " " << ans[i] << ((i != ans.size() - 1) ? "," : " ]\n");
+          out << " " << ans[i] << ((i != ans.size() - 1) ? "," : " ],\n");
+        }
+        out << "  \"probability\":[";
+        for (int i=0; i < proba.size(); i++) {
+          out << " " << proba[i] << ((i != proba.size() - 1) ? "," : " ]\n");
         }
         out << "}";
         out.close();
