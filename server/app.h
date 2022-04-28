@@ -21,10 +21,10 @@ print_parameters(const seal::SEALContext &context) {
     }
 
     std::cout << "Encryption parameters :" << std::endl;
-    std::cout << "     scheme: " << scheme_name << std::endl;
-    std::cout << "     poly_modulus_degree: " << context_data.parms().poly_modulus_degree() << std::endl;
+    std::cout << "    scheme: " << scheme_name << std::endl;
+    std::cout << "    poly_modulus_degree: " << context_data.parms().poly_modulus_degree() << std::endl;
 
-    std::cout << "     coeff_modulus size: ";
+    std::cout << "    coeff_modulus size: ";
     std::cout << context_data.total_coeff_modulus_bit_count() << " (";
     auto coeff_modulus = context_data.parms().coeff_modulus();
     std::size_t coeff_modulus_size = coeff_modulus.size();
