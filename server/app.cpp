@@ -21,18 +21,17 @@ singleclass(std::string key_fp, std::string in_fp, std::string out_fp, std::stri
     size_t poly_modulus_degree = 32768;
     parms.set_poly_modulus_degree(poly_modulus_degree);
     parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 60, 40, 40, 60 }));
-    double scale = pow(2.0, 40);
     SEALContext context(parms);
     print_parameters(parms);
 
     keys_t keys = load_keys(key_fp, context);
-    Plaintext pt_model = load_pt_singleclass_model(model_fp, context, scale);
+    std::vector<double> model = load_pt_singleclass_model(model_fp);
     Ciphertext ct_query;
     Ciphertext ct_result;
     for (const auto &entry : fs::directory_iterator(in_fp)) {
         ct_query = load_ct(entry.path(), context);
         std::cout << "Calculating dot product" << std::endl;
-        ct_result = dot_product(keys, context, pt_model, ct_query);
+        ct_result = decision_function(keys, context, ct_query, model);
         save_ct(fs::path(out_fp) / entry.path().filename(), ct_result);
     }
 }
