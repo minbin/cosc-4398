@@ -35,16 +35,26 @@ decrypt(std::string key_fp, std::string in_fp, std::string out_fp) {
     Decryptor decryptor(context, secret_key);
     CKKSEncoder encoder(context);
     std::vector<double> ans;
+    std::vector<double> proba;
+    ans.resize(10);
+    proba.resize(10);
 
     for (const auto &entry : fs::directory_iterator(in_fp)) {
         ct_result = load_ct(entry.path(), context);
         decryptor.decrypt(ct_result, pt_result);
         encoder.decode(pt_result, result);
-        if (result.front() > 0) ans.push_back(1);
-        else ans.push_back(0);
+        int n = std::stoi(entry.path().filename()) + 1;
+        if (n > result.size()) {
+            ans.resize(n);
+            proba.resize(n);
+        }
+        proba[n-1] = result.front();
+        if (result.front() > 0) ans[n-1] = 1;
+        else ans[n-1] = 0;
     }
 
-    print_json(out_fp, ans);
+    print_vector(ans);
+    print_json(out_fp, ans, proba);
 }
 
 void
@@ -71,7 +81,7 @@ encrypt_infile(std::string key_fp, std::string in_fp, std::string out_fp) {
     fs::create_directories(fs::path(out_fp) / "keys");
     for (int i=0; i < queries.size(); i++) {
         Plaintext pt_query;
-        std::cout << "Encrypting "; print_vector(queries[i]);
+        std::cout << "Encoding "; print_vector(queries[i]);
         encoder.encode(queries[i], scale, pt_query);
         Ciphertext ct_query;
         encryptor.encrypt(pt_query, ct_query);
