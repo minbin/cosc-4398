@@ -21,6 +21,7 @@ load_queries(std::string in_fp) {
                 tmp.push_back(std::stof(s.substr(0, pos)));
                 s.erase(0, pos + delim.length());
             }
+            tmp.push_back(std::stof(s));
             queries.push_back(tmp);
         }
     } else {
